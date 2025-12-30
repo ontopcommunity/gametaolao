@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Troll Maze - Stop at Junctions</title>
+    <title>Mega Troll Maze - Classic Control</title>
     <style>
         body {
             margin: 0;
@@ -17,43 +17,102 @@
             color: white;
             font-family: 'Segoe UI', sans-serif;
             overflow: hidden;
-            touch-action: none; 
+            touch-action: none;
+            user-select: none;
         }
 
-        #ui-layer {
-            position: absolute;
-            top: 10px;
+        /* --- UI LAYER --- */
+        #top-ui {
             width: 100%;
-            text-align: center;
-            pointer-events: none; 
-            z-index: 10;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 20px;
+            box-sizing: border-box;
+            background: rgba(0,0,0,0.3);
+            height: 50px;
         }
 
         #timer {
-            font-size: 28px;
+            font-size: 24px;
             font-weight: bold;
             color: #f1c40f;
-            text-shadow: 2px 2px 0 #000;
         }
 
-        #hint {
+        #status {
             font-size: 14px;
-            opacity: 0.8;
-            margin-top: 5px;
+            color: #ecf0f1;
         }
 
-        #game-container {
+        /* --- GAME CONTAINER --- */
+        #game-wrapper {
             position: relative;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            border: 4px solid #fff;
-            border-radius: 8px;
-            background: #000;
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            overflow: hidden;
         }
 
         canvas {
-            display: block;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            border: 2px solid #7f8c8d;
+            border-radius: 4px;
+            background: #000;
+            /* Đảm bảo canvas không vượt quá màn hình */
+            max-width: 98%;
+            max-height: 98%;
         }
 
+        /* --- D-PAD CONTROLS (MOBILE) --- */
+        #controls-area {
+            height: 180px;
+            width: 100%;
+            background: rgba(0,0,0,0.2);
+            display: none; /* Ẩn trên PC */
+            justify-content: center;
+            align-items: center;
+            padding-bottom: 20px;
+        }
+
+        .dpad {
+            display: grid;
+            grid-template-columns: 70px 70px 70px;
+            grid-template-rows: 70px 70px;
+            gap: 5px;
+        }
+
+        .btn {
+            width: 70px;
+            height: 70px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 12px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 30px;
+            user-select: none;
+            cursor: pointer;
+            color: white;
+            transition: background 0.1s;
+            /* Chặn hành vi mặc định của touch */
+            touch-action: none; 
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .btn:active, .btn.active {
+            background: rgba(231, 76, 60, 0.6); /* Màu đỏ khi bấm */
+            transform: scale(0.95);
+        }
+
+        #btn-up { grid-column: 2; grid-row: 1; }
+        #btn-left { grid-column: 1; grid-row: 2; }
+        #btn-down { grid-column: 2; grid-row: 2; }
+        #btn-right { grid-column: 3; grid-row: 2; }
+
+        /* --- MESSAGE OVERLAY --- */
         #msg-overlay {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -61,12 +120,12 @@
             justify-content: center;
             align-items: center;
             background: rgba(0,0,0,0.85);
-            font-size: 24px;
+            font-size: 20px;
             text-align: center;
             padding: 20px;
             box-sizing: border-box;
             display: none;
-            z-index: 20;
+            z-index: 50;
             font-weight: bold;
             color: #e74c3c;
         }
@@ -74,49 +133,79 @@
 </head>
 <body>
 
-    <div id="ui-layer">
-        <div id="timer">30s</div>
-        <div id="hint">Vuốt để di chuyển. Sẽ dừng tại ngã rẽ.</div>
+    <div id="top-ui">
+        <div id="status">Map 31x31 - Giữ để chạy</div>
+        <div id="timer">45s</div>
     </div>
 
-    <div id="game-container">
+    <div id="game-wrapper">
         <canvas id="gameCanvas"></canvas>
         <div id="msg-overlay"></div>
     </div>
 
+    <div id="controls-area">
+        <div class="dpad">
+            <div class="btn" id="btn-up">▲</div>
+            <div class="btn" id="btn-left">◄</div>
+            <div class="btn" id="btn-down">▼</div>
+            <div class="btn" id="btn-right">►</div>
+        </div>
+    </div>
+
 <script>
-    // --- CẤU HÌNH & KHỞI TẠO ---
+    // --- CẤU HÌNH ---
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const timerDisplay = document.getElementById('timer');
     const msgOverlay = document.getElementById('msg-overlay');
+    const controlsArea = document.getElementById('controls-area');
 
-    const COLS = 21; 
-    const ROWS = 21; 
+    const COLS = 31; 
+    const ROWS = 31; 
     let TILE_SIZE = 0; 
+    let MAX_TIME = 45; 
+
+    // Tốc độ di chuyển: 80ms một bước (Càng nhỏ càng nhanh)
+    const MOVE_SPEED_MS = 80; 
 
     const COLORS = {
-        bg: '#2c3e50',
         wall: '#34495e',
-        wallBorder: '#2c3e50',
         path: '#ecf0f1',
         player: '#e67e22', 
         goal: '#2ecc71'    
     };
 
-    let maze = []; // 1: Tường, 0: Đường
+    let maze = [];
     let player = { x: 1, y: 1 };
     let goal = { x: 1, y: 1 };
     
-    let isMoving = false;
-    let moveInterval = null;
-    let timeLeft = 30;
+    // Biến điều khiển di chuyển
+    let currentDir = { x: 0, y: 0 }; // Hướng hiện tại đang giữ
+    let lastMoveTime = 0; // Để kiểm soát tốc độ
+    
+    let timeLeft = MAX_TIME;
     let timerInterval = null;
 
-    // --- RESPONSIVE ---
+    // --- PHÁT HIỆN THIẾT BỊ ---
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+        controlsArea.style.display = 'flex'; 
+        document.getElementById('status').innerText = "Giữ nút để di chuyển";
+    } else {
+        document.getElementById('status').innerText = "Giữ phím WASD / Mũi tên";
+    }
+
+    // --- RESPONSIVE CANVAS ---
     function resize() {
-        const size = Math.min(window.innerWidth, window.innerHeight) * 0.90; 
+        let availableHeight = window.innerHeight - 50; 
+        if (isMobile) availableHeight -= 180; 
+
+        let availableWidth = window.innerWidth;
+        let size = Math.min(availableWidth, availableHeight) * 0.95; 
+        
         TILE_SIZE = Math.floor(size / COLS);
+        
         canvas.width = TILE_SIZE * COLS;
         canvas.height = TILE_SIZE * ROWS;
         draw();
@@ -128,9 +217,7 @@
         maze = [];
         for(let y=0; y<ROWS; y++) {
             let row = [];
-            for(let x=0; x<COLS; x++) {
-                row.push(1);
-            }
+            for(let x=0; x<COLS; x++) { row.push(1); }
             maze.push(row);
         }
 
@@ -165,171 +252,185 @@
         if(y-2 > 0)    walls.push({x: x, y: y-1, dx: 0, dy: -1});
     }
 
-    // --- LOGIC DI CHUYỂN MỚI (Dừng tại ngã rẽ) ---
-    function move(dx, dy) {
-        if (isMoving) return;
-        
-        // Kiểm tra tường ngay bước đầu tiên
-        if (maze[player.y + dy][player.x + dx] === 1) return;
+    // --- GAME LOOP (Xử lý di chuyển liên tục) ---
+    function gameLoop() {
+        const now = Date.now();
 
-        isMoving = true;
+        // Chỉ di chuyển nếu có hướng và đã qua thời gian delay (tốc độ)
+        if ((currentDir.x !== 0 || currentDir.y !== 0) && (now - lastMoveTime > MOVE_SPEED_MS)) {
+            
+            let nextX = player.x + currentDir.x;
+            let nextY = player.y + currentDir.y;
 
-        moveInterval = setInterval(() => {
-            let nextX = player.x + dx;
-            let nextY = player.y + dy;
-
-            // 1. Kiểm tra va chạm TƯỜNG (Dừng lại)
-            if (maze[nextY][nextX] === 1) {
-                clearInterval(moveInterval);
-                isMoving = false;
-                checkWin();
-                return; // Dừng
-            }
-
-            // 2. Di chuyển nhân vật sang ô mới
-            player.x = nextX;
-            player.y = nextY;
-            draw();
-
-            if (player.x === goal.x && player.y === goal.y) {
-                clearInterval(moveInterval);
-                isMoving = false;
-                checkWin();
-                return;
-            }
-
-            // 3. Kiểm tra NGÃ RẼ (Intersection Check)
-            // Nếu có đường rẽ ngang hông, dừng lại để người chơi chọn.
-            let stopAtIntersection = false;
-
-            if (dx !== 0) { 
-                // Đang đi ngang (Trái/Phải) -> Kiểm tra xem có đường Lên hoặc Xuống không?
-                // Lưu ý: maze[y][x] == 0 là đường đi
-                let pathUp = maze[player.y - 1][player.x] === 0;
-                let pathDown = maze[player.y + 1][player.x] === 0;
+            // Kiểm tra tường
+            if (maze[nextY][nextX] === 0) {
+                player.x = nextX;
+                player.y = nextY;
+                lastMoveTime = now;
                 
-                if (pathUp || pathDown) stopAtIntersection = true;
-
-            } else if (dy !== 0) { 
-                // Đang đi dọc (Lên/Xuống) -> Kiểm tra xem có đường Trái hoặc Phải không?
-                let pathLeft = maze[player.y][player.x - 1] === 0;
-                let pathRight = maze[player.y][player.x + 1] === 0;
-
-                if (pathLeft || pathRight) stopAtIntersection = true;
+                // Kiểm tra thắng
+                if (player.x === goal.x && player.y === goal.y) {
+                    checkWin();
+                }
+            } else {
+                // Đụng tường thì không đi được, nhưng không reset hướng
+                // để người dùng vẫn giữ phím được
             }
+            draw();
+        }
 
-            if (stopAtIntersection) {
-                clearInterval(moveInterval);
-                isMoving = false;
-            }
-
-        }, 40); // Tốc độ trượt (ms)
+        requestAnimationFrame(gameLoop);
     }
 
-    // --- INPUT ---
+    // --- XỬ LÝ INPUT ---
+    
+    // 1. PC: Keyboard
+    // Dùng một Set để lưu các phím đang nhấn
+    const activeKeys = new Set();
+
     document.addEventListener('keydown', (e) => {
-        if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
-        
-        if (e.code === 'ArrowUp' || e.code === 'KeyW') move(0, -1);
-        else if (e.code === 'ArrowDown' || e.code === 'KeyS') move(0, 1);
-        else if (e.code === 'ArrowLeft' || e.code === 'KeyA') move(-1, 0);
-        else if (e.code === 'ArrowRight' || e.code === 'KeyD') move(1, 0);
+        if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD'].includes(e.code)) {
+            e.preventDefault(); // Chặn cuộn trang
+            activeKeys.add(e.code);
+            updateDirection();
+        }
     });
 
-    let touchStartX = 0, touchStartY = 0;
-    canvas.addEventListener('touchstart', (e) => {
-        e.preventDefault(); 
-        touchStartX = e.changedTouches[0].screenX;
-        touchStartY = e.changedTouches[0].screenY;
-    }, {passive: false});
+    document.addEventListener('keyup', (e) => {
+        if(activeKeys.has(e.code)) {
+            activeKeys.delete(e.code);
+            updateDirection();
+        }
+    });
 
-    canvas.addEventListener('touchend', (e) => {
-        e.preventDefault();
-        let touchEndX = e.changedTouches[0].screenX;
-        let touchEndY = e.changedTouches[0].screenY;
-        handleSwipe(touchStartX, touchStartY, touchEndX, touchEndY);
-    }, {passive: false});
+    function updateDirection() {
+        // Reset hướng
+        currentDir = { x: 0, y: 0 };
 
-    function handleSwipe(x1, y1, x2, y2) {
-        let dx = x2 - x1;
-        let dy = y2 - y1;
-        if (Math.abs(dx) < 30 && Math.abs(dy) < 30) return;
-
-        if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 1 : -1, 0);
-        else move(0, dy > 0 ? 1 : -1);
+        // Ưu tiên phím nào bấm sau cùng hoặc logic đơn giản
+        // Ở đây check theo thứ tự ưu tiên
+        if (activeKeys.has('ArrowUp') || activeKeys.has('KeyW')) { currentDir = { x: 0, y: -1 }; return; }
+        if (activeKeys.has('ArrowDown') || activeKeys.has('KeyS')) { currentDir = { x: 0, y: 1 }; return; }
+        if (activeKeys.has('ArrowLeft') || activeKeys.has('KeyA')) { currentDir = { x: -1, y: 0 }; return; }
+        if (activeKeys.has('ArrowRight') || activeKeys.has('KeyD')) { currentDir = { x: 1, y: 0 }; return; }
     }
 
-    // --- RENDER ---
+    // 2. Mobile: Touch Buttons
+    function setupTouchBtn(id, dx, dy) {
+        const btn = document.getElementById(id);
+        
+        const startMove = (e) => {
+            e.preventDefault(); // Chặn hành vi mặc định
+            currentDir = { x: dx, y: dy };
+            btn.classList.add('active'); // Hiệu ứng thị giác
+        };
+
+        const stopMove = (e) => {
+            e.preventDefault();
+            // Chỉ dừng nếu hướng hiện tại đúng là hướng của nút này (tránh xung đột đa điểm)
+            if (currentDir.x === dx && currentDir.y === dy) {
+                currentDir = { x: 0, y: 0 };
+            }
+            btn.classList.remove('active');
+        };
+        
+        // Sự kiện Touch
+        btn.addEventListener('touchstart', startMove, {passive: false});
+        btn.addEventListener('touchend', stopMove, {passive: false});
+        
+        // Hỗ trợ chuột trên PC click vào nút ảo
+        btn.addEventListener('mousedown', startMove);
+        btn.addEventListener('mouseup', stopMove);
+        btn.addEventListener('mouseleave', stopMove);
+    }
+
+    setupTouchBtn('btn-up', 0, -1);
+    setupTouchBtn('btn-down', 0, 1);
+    setupTouchBtn('btn-left', -1, 0);
+    setupTouchBtn('btn-right', 1, 0);
+
+    // --- VẼ ---
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
         for(let y=0; y<ROWS; y++) {
             for(let x=0; x<COLS; x++) {
                 if(maze[y][x] === 1) {
                     ctx.fillStyle = COLORS.wall;
                     ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                    ctx.strokeStyle = "#222";
-                    ctx.lineWidth = 1;
-                    ctx.strokeRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
                 } else {
                     ctx.fillStyle = COLORS.path;
                     ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
                 }
             }
         }
-        ctx.fillStyle = COLORS.goal;
-        let p = TILE_SIZE * 0.2; 
-        ctx.fillRect(goal.x*TILE_SIZE + p, goal.y*TILE_SIZE + p, TILE_SIZE - 2*p, TILE_SIZE - 2*p);
 
+        // Đích
+        ctx.fillStyle = COLORS.goal;
+        let p = TILE_SIZE * 0.15;
+        ctx.fillRect(goal.x*TILE_SIZE+p, goal.y*TILE_SIZE+p, TILE_SIZE-2*p, TILE_SIZE-2*p);
+
+        // Player
         let px = player.x * TILE_SIZE;
         let py = player.y * TILE_SIZE;
         ctx.fillStyle = COLORS.player;
         ctx.beginPath();
         ctx.arc(px + TILE_SIZE/2, py + TILE_SIZE/2, TILE_SIZE/2.5, 0, Math.PI*2);
         ctx.fill();
+        
+        // Mắt Player
         ctx.fillStyle = "#fff";
         ctx.beginPath();
-        ctx.arc(px + TILE_SIZE/2 - 4, py + TILE_SIZE/2 - 2, 3, 0, Math.PI*2);
-        ctx.arc(px + TILE_SIZE/2 + 4, py + TILE_SIZE/2 - 2, 3, 0, Math.PI*2);
+        ctx.arc(px + TILE_SIZE/2 - 3, py + TILE_SIZE/2 - 2, 2, 0, Math.PI*2);
+        ctx.arc(px + TILE_SIZE/2 + 3, py + TILE_SIZE/2 - 2, 2, 0, Math.PI*2);
         ctx.fill();
     }
 
     // --- GAME CONTROL ---
     function checkWin() {
-        if(player.x === goal.x && player.y === goal.y) {
-            showMsg("THẮNG RỒI!<br>Nhưng map vẫn đổi thôi hihi");
-            setTimeout(resetGame, 2000);
-        }
+        // Reset hướng để tránh chạy tiếp khi đã thắng
+        currentDir = { x: 0, y: 0 }; 
+        showMsg("THẮNG RỒI!<br>Map reset sau 2s");
+        setTimeout(resetGame, 2000);
     }
+
     function showMsg(html) {
         msgOverlay.innerHTML = html;
         msgOverlay.style.display = 'flex';
         setTimeout(() => { msgOverlay.style.display = 'none'; }, 1500);
     }
+
     function resetGame() {
-        if (moveInterval) clearInterval(moveInterval);
-        isMoving = false;
+        currentDir = { x: 0, y: 0 };
+        activeKeys.clear(); // Xóa trạng thái phím
         generateMaze();
-        resize(); 
-        timeLeft = 30;
+        resize();
+        timeLeft = MAX_TIME;
         updateTimer();
     }
+
     function updateTimer() {
         timerDisplay.innerText = timeLeft + "s";
-        timerDisplay.style.color = timeLeft <= 5 ? "#e74c3c" : "#f1c40f";
+        timerDisplay.style.color = timeLeft <= 10 ? "#e74c3c" : "#f1c40f";
     }
+
     function startTimerLoop() {
         if(timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(() => {
             timeLeft--;
             updateTimer();
             if(timeLeft <= 0) {
-                showMsg("HẾT GIỜ!<br>Map mới nè!");
+                showMsg("HẾT GIỜ!<br>Đổi map khác khó hơn!");
                 resetGame();
             }
         }, 1000);
     }
+
+    // --- KHỞI CHẠY ---
     resetGame();
     startTimerLoop();
+    requestAnimationFrame(gameLoop); // Bắt đầu vòng lặp game
+
 </script>
 </body>
 </html>
