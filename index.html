@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Troll Maze - Slide to Wall</title>
+    <title>Troll Maze - Stop at Junctions</title>
     <style>
         body {
             margin: 0;
@@ -16,8 +16,8 @@
             height: 100vh;
             color: white;
             font-family: 'Segoe UI', sans-serif;
-            overflow: hidden; /* Chặn thanh cuộn */
-            touch-action: none; /* Quan trọng: Chặn reload/scroll khi vuốt trên mobile */
+            overflow: hidden;
+            touch-action: none; 
         }
 
         #ui-layer {
@@ -25,7 +25,7 @@
             top: 10px;
             width: 100%;
             text-align: center;
-            pointer-events: none; /* Để vuốt xuyên qua text */
+            pointer-events: none; 
             z-index: 10;
         }
 
@@ -65,7 +65,7 @@
             text-align: center;
             padding: 20px;
             box-sizing: border-box;
-            display: none; /* Ẩn mặc định */
+            display: none;
             z-index: 20;
             font-weight: bold;
             color: #e74c3c;
@@ -76,7 +76,7 @@
 
     <div id="ui-layer">
         <div id="timer">30s</div>
-        <div id="hint">Vuốt hoặc dùng phím mũi tên để trượt</div>
+        <div id="hint">Vuốt để di chuyển. Sẽ dừng tại ngã rẽ.</div>
     </div>
 
     <div id="game-container">
@@ -91,22 +91,19 @@
     const timerDisplay = document.getElementById('timer');
     const msgOverlay = document.getElementById('msg-overlay');
 
-    // Kích thước game
-    const COLS = 19; // Số cột (Số lẻ để thuật toán tạo mê cung đẹp hơn)
-    const ROWS = 19; // Số hàng
-    let TILE_SIZE = 0; // Sẽ tính toán lại theo màn hình
+    const COLS = 21; 
+    const ROWS = 21; 
+    let TILE_SIZE = 0; 
 
-    // Màu sắc
     const COLORS = {
         bg: '#2c3e50',
         wall: '#34495e',
         wallBorder: '#2c3e50',
         path: '#ecf0f1',
-        player: '#e67e22', // Cam
-        goal: '#2ecc71'    // Xanh lá
+        player: '#e67e22', 
+        goal: '#2ecc71'    
     };
 
-    // Trạng thái game
     let maze = []; // 1: Tường, 0: Đường
     let player = { x: 1, y: 1 };
     let goal = { x: 1, y: 1 };
@@ -116,23 +113,18 @@
     let timeLeft = 30;
     let timerInterval = null;
 
-    // --- XỬ LÝ RESPONSIVE (Tự chỉnh size theo màn hình) ---
+    // --- RESPONSIVE ---
     function resize() {
-        // Lấy kích thước nhỏ nhất của màn hình để làm cạnh hình vuông
-        const size = Math.min(window.innerWidth, window.innerHeight) * 0.90; // 90% màn hình
-        
-        // Làm tròn số để ô vuông đẹp hơn
+        const size = Math.min(window.innerWidth, window.innerHeight) * 0.90; 
         TILE_SIZE = Math.floor(size / COLS);
-        
         canvas.width = TILE_SIZE * COLS;
         canvas.height = TILE_SIZE * ROWS;
         draw();
     }
     window.addEventListener('resize', resize);
 
-    // --- THUẬT TOÁN TẠO MÊ CUNG (Prim's Algorithm) ---
+    // --- TẠO MÊ CUNG (Prim's Algorithm) ---
     function generateMaze() {
-        // Reset lưới thành toàn tường
         maze = [];
         for(let y=0; y<ROWS; y++) {
             let row = [];
@@ -142,13 +134,11 @@
             maze.push(row);
         }
 
-        // Bắt đầu từ (1,1)
         let walls = [];
         maze[1][1] = 0;
         addWalls(1, 1, walls);
 
         while(walls.length > 0) {
-            // Chọn ngẫu nhiên 1 bức tường
             let idx = Math.floor(Math.random() * walls.length);
             let w = walls[idx];
             walls.splice(idx, 1);
@@ -156,75 +146,87 @@
             let nx = w.x + w.dx;
             let ny = w.y + w.dy;
 
-            // Nếu ô bên kia bức tường chưa được đào
             if(nx > 0 && nx < COLS-1 && ny > 0 && ny < ROWS-1 && maze[ny][nx] === 1) {
-                maze[w.y][w.x] = 0; // Đục tường hiện tại
-                maze[ny][nx] = 0;   // Đục ô tiếp theo
+                maze[w.y][w.x] = 0; 
+                maze[ny][nx] = 0;   
                 addWalls(nx, ny, walls);
             }
         }
         
-        // Đặt vị trí người chơi & đích
         player = { x: 1, y: 1 };
         goal = { x: COLS - 2, y: ROWS - 2 };
-        maze[goal.y][goal.x] = 0; // Đảm bảo đích không bị kẹt trong tường
+        maze[goal.y][goal.x] = 0; 
     }
 
     function addWalls(x, y, walls) {
-        // Thêm các tường xung quanh ô (x,y) vào danh sách
         if(x+2 < COLS) walls.push({x: x+1, y: y, dx: 1, dy: 0});
         if(x-2 > 0)    walls.push({x: x-1, y: y, dx: -1, dy: 0});
         if(y+2 < ROWS) walls.push({x: x, y: y+1, dx: 0, dy: 1});
         if(y-2 > 0)    walls.push({x: x, y: y-1, dx: 0, dy: -1});
     }
 
-    // --- HỆ THỐNG DI CHUYỂN (SLIDE UNTIL WALL) ---
+    // --- LOGIC DI CHUYỂN MỚI (Dừng tại ngã rẽ) ---
     function move(dx, dy) {
-        if (isMoving) return; // Đang trượt thì không nhận lệnh mới
-
-        // Kiểm tra ngay ô kế tiếp, nếu là tường thì không trượt (tránh lỗi rung)
+        if (isMoving) return;
+        
+        // Kiểm tra tường ngay bước đầu tiên
         if (maze[player.y + dy][player.x + dx] === 1) return;
 
         isMoving = true;
 
-        // Dùng setInterval để tạo hiệu ứng trượt mượt mà
         moveInterval = setInterval(() => {
             let nextX = player.x + dx;
             let nextY = player.y + dy;
 
-            // KIỂM TRA VA CHẠM
+            // 1. Kiểm tra va chạm TƯỜNG (Dừng lại)
             if (maze[nextY][nextX] === 1) {
-                // Đụng tường -> Dừng lại
                 clearInterval(moveInterval);
                 isMoving = false;
-                
-                // Kiểm tra xem có trúng đích chưa (lúc dừng lại)
-                checkWin(); 
-                
-                // Hiệu ứng rung nhẹ khi đụng tường (tùy chọn)
-                draw(dx*2, dy*2); 
-                setTimeout(draw, 50);
-            } else {
-                // Chưa đụng -> Đi tiếp
-                player.x = nextX;
-                player.y = nextY;
-                draw();
-                
-                // Kiểm tra trúng đích TRONG KHI trượt (nếu muốn đích cản lại thì sửa logic)
-                // Ở đây game Tomb of Mask thường phải dừng lại hẳn mới tính, 
-                // nhưng ta sẽ check luôn để gameplay nhanh hơn.
-                if (player.x === goal.x && player.y === goal.y) {
-                    clearInterval(moveInterval);
-                    isMoving = false;
-                    checkWin();
-                }
+                checkWin();
+                return; // Dừng
             }
-        }, 30); // Tốc độ trượt (ms), càng nhỏ càng nhanh
+
+            // 2. Di chuyển nhân vật sang ô mới
+            player.x = nextX;
+            player.y = nextY;
+            draw();
+
+            if (player.x === goal.x && player.y === goal.y) {
+                clearInterval(moveInterval);
+                isMoving = false;
+                checkWin();
+                return;
+            }
+
+            // 3. Kiểm tra NGÃ RẼ (Intersection Check)
+            // Nếu có đường rẽ ngang hông, dừng lại để người chơi chọn.
+            let stopAtIntersection = false;
+
+            if (dx !== 0) { 
+                // Đang đi ngang (Trái/Phải) -> Kiểm tra xem có đường Lên hoặc Xuống không?
+                // Lưu ý: maze[y][x] == 0 là đường đi
+                let pathUp = maze[player.y - 1][player.x] === 0;
+                let pathDown = maze[player.y + 1][player.x] === 0;
+                
+                if (pathUp || pathDown) stopAtIntersection = true;
+
+            } else if (dy !== 0) { 
+                // Đang đi dọc (Lên/Xuống) -> Kiểm tra xem có đường Trái hoặc Phải không?
+                let pathLeft = maze[player.y][player.x - 1] === 0;
+                let pathRight = maze[player.y][player.x + 1] === 0;
+
+                if (pathLeft || pathRight) stopAtIntersection = true;
+            }
+
+            if (stopAtIntersection) {
+                clearInterval(moveInterval);
+                isMoving = false;
+            }
+
+        }, 40); // Tốc độ trượt (ms)
     }
 
-    // --- XỬ LÝ INPUT (Cảm ứng & Phím) ---
-    
-    // 1. Bàn phím
+    // --- INPUT ---
     document.addEventListener('keydown', (e) => {
         if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
         
@@ -234,12 +236,9 @@
         else if (e.code === 'ArrowRight' || e.code === 'KeyD') move(1, 0);
     });
 
-    // 2. Cảm ứng (Vuốt)
-    let touchStartX = 0;
-    let touchStartY = 0;
-
+    let touchStartX = 0, touchStartY = 0;
     canvas.addEventListener('touchstart', (e) => {
-        e.preventDefault(); // Chặn hành vi mặc định
+        e.preventDefault(); 
         touchStartX = e.changedTouches[0].screenX;
         touchStartY = e.changedTouches[0].screenY;
     }, {passive: false});
@@ -254,30 +253,20 @@
     function handleSwipe(x1, y1, x2, y2) {
         let dx = x2 - x1;
         let dy = y2 - y1;
-        
-        // Phải vuốt đủ dài mới tính (tránh chạm nhầm)
         if (Math.abs(dx) < 30 && Math.abs(dy) < 30) return;
 
-        if (Math.abs(dx) > Math.abs(dy)) {
-            // Vuốt ngang
-            move(dx > 0 ? 1 : -1, 0);
-        } else {
-            // Vuốt dọc
-            move(0, dy > 0 ? 1 : -1);
-        }
+        if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 1 : -1, 0);
+        else move(0, dy > 0 ? 1 : -1);
     }
 
-    // --- RENDER GAME ---
-    function draw(offsetX = 0, offsetY = 0) {
+    // --- RENDER ---
+    function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Vẽ Map
         for(let y=0; y<ROWS; y++) {
             for(let x=0; x<COLS; x++) {
                 if(maze[y][x] === 1) {
                     ctx.fillStyle = COLORS.wall;
                     ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                    // Viền nhẹ cho tường
                     ctx.strokeStyle = "#222";
                     ctx.lineWidth = 1;
                     ctx.strokeRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
@@ -287,22 +276,16 @@
                 }
             }
         }
-
-        // Vẽ Đích
         ctx.fillStyle = COLORS.goal;
-        let p = TILE_SIZE * 0.2; // Padding
+        let p = TILE_SIZE * 0.2; 
         ctx.fillRect(goal.x*TILE_SIZE + p, goal.y*TILE_SIZE + p, TILE_SIZE - 2*p, TILE_SIZE - 2*p);
 
-        // Vẽ Player (Có hỗ trợ rung lắc nhẹ qua offsetX/Y)
-        let px = player.x * TILE_SIZE + offsetX;
-        let py = player.y * TILE_SIZE + offsetY;
-        
+        let px = player.x * TILE_SIZE;
+        let py = player.y * TILE_SIZE;
         ctx.fillStyle = COLORS.player;
         ctx.beginPath();
         ctx.arc(px + TILE_SIZE/2, py + TILE_SIZE/2, TILE_SIZE/2.5, 0, Math.PI*2);
         ctx.fill();
-
-        // Mắt Player (Cute)
         ctx.fillStyle = "#fff";
         ctx.beginPath();
         ctx.arc(px + TILE_SIZE/2 - 4, py + TILE_SIZE/2 - 2, 3, 0, Math.PI*2);
@@ -310,57 +293,43 @@
         ctx.fill();
     }
 
-    // --- LOGIC GAMEPLAY & TROLL ---
+    // --- GAME CONTROL ---
     function checkWin() {
         if(player.x === goal.x && player.y === goal.y) {
-            showMsg("THẮNG RỒI!<br>Nhưng đừng vội mừng...");
+            showMsg("THẮNG RỒI!<br>Nhưng map vẫn đổi thôi hihi");
             setTimeout(resetGame, 2000);
         }
     }
-
     function showMsg(html) {
         msgOverlay.innerHTML = html;
         msgOverlay.style.display = 'flex';
-        setTimeout(() => {
-            msgOverlay.style.display = 'none';
-        }, 1500);
+        setTimeout(() => { msgOverlay.style.display = 'none'; }, 1500);
     }
-
     function resetGame() {
-        // Dừng mọi chuyển động nếu đang trượt dở
         if (moveInterval) clearInterval(moveInterval);
         isMoving = false;
-
         generateMaze();
-        resize(); // Vẽ lại và tính toán size
-        
+        resize(); 
         timeLeft = 30;
         updateTimer();
     }
-
     function updateTimer() {
         timerDisplay.innerText = timeLeft + "s";
-        if(timeLeft <= 5) timerDisplay.style.color = "#e74c3c"; // Màu đỏ cảnh báo
-        else timerDisplay.style.color = "#f1c40f";
+        timerDisplay.style.color = timeLeft <= 5 ? "#e74c3c" : "#f1c40f";
     }
-
-    // Loop đếm ngược 1s
     function startTimerLoop() {
         if(timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(() => {
             timeLeft--;
             updateTimer();
             if(timeLeft <= 0) {
-                showMsg("HẾT GIỜ!<br>Map đổi rồi lêu lêu :P");
+                showMsg("HẾT GIỜ!<br>Map mới nè!");
                 resetGame();
             }
         }, 1000);
     }
-
-    // --- MAIN ---
     resetGame();
     startTimerLoop();
-
 </script>
 </body>
 </html>
